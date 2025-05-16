@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <title>地质褶皱虚拟实验</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f0f0f0;
+        }
+        #experiment-container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            max-width: 750px;
+            margin: 0 auto;
+        }
+        .canvas-wrapper {
+            position: relative;
+             width: 560px;
+            margin: 0 auto
+        }
+        canvas {
+            border: 2px solid #333;
+            display: block;
+		margin: 0 auto;
+            background-color: #f9f9f9;
+        }
+        .label-container {
+            position: absolute;
+            top: 0;
+            width: 30px;
+        }
+        .left-labels {
+            left: -10px;
+        }
+        .right-labels {
+            right: -30px;
+        }
+        .layer-label {
+            position: absolute;
+            font-size: 16px;
+            color: #333;
+            transform: translateY(-50%);
+        }
+        .controls {
+            margin: 10px 0;
+            text-align: center;
+        }
+        input[type="range"] {
+            width: 250px;
+            margin: 0 10px;
+        }
+        .arrow-container {
+            display: flex;
+            justify-content: space-between;
+            margin: 10px 0 20px;
+        }
+        .arrow-left::after,
+        .arrow-right::before {
+            content: "";
+            display: inline-block;
+            width: 0;
+            height: 0;
+            border-style: solid;
+            border-color: transparent;
+            animation: move 1.5s infinite ease-in-out;
+        }
+        @keyframes move {
+            0%, 100% { transform: translateX(0); }
+            50% { transform: translateX(10px); }
+        }
+        .arrow-left::after {
+            border-width: 25px 0 25px 40px;
+            border-left-color: #ff5722;
+            margin-left: 20px;
+        }
+        .arrow-right::before {
+            border-width: 25px 40px 25px 0;
+            border-right-color: #ff5722;
+            margin-right: 20px;
+            animation-name: move-reverse;
+        }
+        @keyframes move-reverse {
+            0%, 100% { transform: translateX(0); }
+            50% { transform: translateX(-10px); }
+        }
+        .info {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #e3f2fd;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="experiment-container">
+        <h2 style="text-align: center;">地质褶皱虚拟实验</h2>
+        
+        <div class="arrow-container">
+            <div class="arrow-left"></div>
+            <div class="arrow-right"></div>
+        </div>
+        
+        <div class="canvas-wrapper">
+            <canvas id="foldCanvas" width="500" height="350"></canvas>
+            <div class="label-container left-labels"></div>
+            <div class="label-container right-labels"></div>
+        </div>
+        
+        <div class="controls">
+            <label><strong>挤压力度:</strong> 
+                <input type="range" id="compression" min="0" max="200" value="0">
+            </label>
+            <button onclick="resetLayers()">重置岩层</button>
+            <button onclick="toggleAnimation()">启动/暂停动画</button>
+        </div>
+
+        <div class="info">
+            <p><strong>实验说明：</strong></p>
+            <ul>
+                <li>数字1表示最老的岩层，数字越大岩层越新</li>
+                <li>拖动滑杆观察岩层在不同挤压力下的变形</li>
+                <li>注意观察褶皱形成过程中岩层的相对运动</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('foldCanvas');
+        const ctx = canvas.getContext('2d');
+        let isAnimating = false;
+        let layers = [];
+        let animationId = null;
+        
+        const colorPalette = [
+            '#8B4513', '#D3D3D8', '#000080', '#8B0000',
+            '#006400', '#FFFF00', '#D8BFD8', '#FFD700'
+        ];
+
+        function initLayers() {
+            // 清空旧标签
+            document.querySelector('.left-labels').innerHTML = '';
+            document.querySelector('.right-labels').innerHTML = '';
+
+            layers = [];
+            const layerHeight = 35;
+            const startY = canvas.height - 30;
+            
+            for(let i=0; i<8; i++) {
+                const yPos = startY - i * layerHeight;
+                const labelPosition = yPos + layerHeight / 2;
+
+                // 创建左侧标签
+                const leftLabel = document.createElement('div');
+                leftLabel.className = 'layer-label';
+                leftLabel.style.top = `${labelPosition}px`;
+                leftLabel.textContent = i+1;
+                document.querySelector('.left-labels').appendChild(leftLabel);
+
+                // 创建右侧标签
+                const rightLabel = document.createElement('div');
+                rightLabel.className = 'layer-label';
+                rightLabel.style.top = `${labelPosition}px`;
+                rightLabel.textContent = i+1;
+                document.querySelector('.right-labels').appendChild(rightLabel);
+
+                layers.push({
+                    y: yPos,
+                    height: layerHeight,
+                    number: i+1,
+                    color: colorPalette[i],
+                    baseY: startY - i*layerHeight
+                });
+            }
+        }
+
+        function drawLayers(compression) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.fillStyle = '#ff5722';
+            ctx.font = 'bold 20px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('拖动滑杆向内挤压', canvas.width/2, 30);
+            
+            layers.forEach((layer, index) => {
+                const amplitude = compression/13 * (1 + index*0.15);
+                
+                ctx.beginPath();
+                const topPoints = [];
+                const bottomPoints = [];
+                
+                for(let x=0; x<=canvas.width; x+=4) {
+                    const wave = Math.sin(x/100 * Math.PI) * amplitude;
+                    const bottomWave = wave * 0.85;
+                    
+                    topPoints.push({x, y: layer.y + wave});
+                    bottomPoints.push({x, y: layer.y + layer.height + bottomWave});
+                }
+                
+                ctx.fillStyle = layer.color;
+                ctx.beginPath();
+                ctx.moveTo(0, layer.y);
+                topPoints.forEach(point => ctx.lineTo(point.x, point.y));
+                for(let i=bottomPoints.length-1; i>=0; i--) ctx.lineTo(bottomPoints[i].x, bottomPoints[i].y);
+                ctx.closePath();
+                ctx.fill();
+
+                const middleX = canvas.width/2;
+                let closestPoint = topPoints.reduce((prev, curr) => 
+                    Math.abs(curr.x - middleX) < Math.abs(prev.x - middleX) ? curr : prev
+                );
+                
+                ctx.fillStyle = 'white';
+                ctx.font = 'bold 18px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(layer.number, middleX, closestPoint.y - 12);
+            });
+        }
+
+        function animate() {
+            const compressionSlider = document.getElementById('compression');
+            let compression = parseInt(compressionSlider.value);
+            if(isAnimating) {
+                compression = Math.min(200, compression + 2);
+                compressionSlider.value = compression;
+            }
+            drawLayers(compression);
+            animationId = requestAnimationFrame(animate);
+        }
+
+        function toggleAnimation() {
+            isAnimating = !isAnimating;
+            isAnimating ? animate() : cancelAnimationFrame(animationId);
+        }
+
+        function resetLayers() {
+            cancelAnimationFrame(animationId);
+            document.getElementById('compression').value = 0;
+            isAnimating = false;
+            initLayers();
+            drawLayers(0);
+        }
+
+        // 初始化
+        initLayers();
+        document.getElementById('compression').addEventListener('input', (e) => {
+            drawLayers(e.target.value);
+        });
+        drawLayers(0);
+    </script>
+</body>
+</html>
